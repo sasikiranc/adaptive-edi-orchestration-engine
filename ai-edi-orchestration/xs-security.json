@@ -1,0 +1,27 @@
+{
+  "xsappname": "ai-routing-agent",
+  "tenant-mode": "dedicated",
+
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.route",
+      "description": "Allow routing access"
+    },
+    {
+      "name": "$XSAPPNAME.admin",
+      "description": "Allow admin access"
+    }
+  ],
+
+  "authorities": [
+    "$XSAPPNAME.route",
+    "$XSAPPNAME.admin"
+  ],
+
+  "oauth2-configuration": {
+    "grant-types": [
+      "client_credentials"
+    ],
+    "token-validity": 1800
+  }
+}

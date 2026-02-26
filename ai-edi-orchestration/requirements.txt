@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+numpy
+psycopg2-binary
+python-dotenv
+asyncpg
+python-jose
+requests
+python-json-logger
