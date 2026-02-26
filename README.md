@@ -3,7 +3,7 @@ Enterprise-ready EDI routing engine combining rules, ML similarity scoring, manu
 
 🚀 Overview
 
-This project implements a BTP-ready AI orchestration microservice designed for high-volume structured message environments such as:
+This project implements an SAP BTP-ready AI orchestration microservice designed for high-volume structured message environments such as:
 
 	EDI / X12 integrations
 	
