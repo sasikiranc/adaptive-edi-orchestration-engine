@@ -1,49 +1,72 @@
-from app.persistence.db import get_db_connection
+from sqlalchemy import text
 
 CONFIG_CACHE = {}
 
-def load_config():
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+def load_config(db):
+
+    config = {}
 
     # message types
-    cur.execute("SELECT code FROM message_types WHERE active = TRUE")
-    message_types = [row[0] for row in cur.fetchall()]
+    result = db.execute(text("""
+        SELECT code
+        FROM message_types
+        WHERE active = TRUE
+    """))
+    config["MESSAGE_TYPES"] = [row[0].upper() for row in result.fetchall()]
 
     # systems
-    cur.execute("SELECT code FROM systems WHERE active = TRUE")
-    systems = [row[0] for row in cur.fetchall()]
+    result = db.execute(text("""
+        SELECT code
+        FROM systems
+        WHERE active = TRUE
+    """))
+    config["SYSTEMS"] = [row[0].upper() for row in result.fetchall()]
 
     # versions
-    cur.execute("SELECT code FROM versions WHERE active = TRUE")
-    versions = [row[0] for row in cur.fetchall()]
+    result = db.execute(text("""
+        SELECT code
+        FROM versions
+        WHERE active = TRUE
+    """))
+    config["VERSIONS"] = [row[0].upper() for row in result.fetchall()]
 
     # directions
-    cur.execute("SELECT code FROM directions WHERE active = TRUE")
-    directions = [row[0] for row in cur.fetchall()]
+    result = db.execute(text("""
+        SELECT code
+        FROM directions
+        WHERE active = TRUE
+    """))
+    config["DIRECTIONS"] = [row[0].upper() for row in result.fetchall()]
 
     # similarity weights
-    cur.execute("SELECT feature_name, weight FROM similarity_weights")
-    weights = {row[0]: row[1] for row in cur.fetchall()}
+    result = db.execute(text("""
+        SELECT feature_name, weight
+        FROM similarity_weights
+    """))
+    config["WEIGHTS"] = {
+        row[0].upper(): float(row[1]) for row in result.fetchall()
+    }
 
-    # confidence threshold
-    cur.execute("SELECT code, confidence_threshold FROM confidence_thresholds")
-    confidence_thresholds = {row[0]: row[1] for row in cur.fetchall()}
+    # confidence thresholds
+    result = db.execute(text("""
+        SELECT code, confidence_threshold
+        FROM confidence_thresholds
+    """))
+    config["CONFIDENCE_THRESHOLDS"] = {
+        row[0].upper(): float(row[1]) for row in result.fetchall()
+    }
 
     # decision weights
-    cur.execute("SELECT decision_type, weight FROM decision_weights")
-    decision_weights = {row[0]: row[1] for row in cur.fetchall()}
+    result = db.execute(text("""
+        SELECT decision_type, weight
+        FROM decision_weights
+    """))
+    config["DECISION_WEIGHTS"] = {
+        row[0].upper(): float(row[1]) for row in result.fetchall()
+    }
 
-    cur.close()
-    conn.close()
+    CONFIG_CACHE.clear()
+    CONFIG_CACHE.update(config)
 
-    CONFIG_CACHE.update({
-        "MESSAGE_TYPES": message_types,
-        "SYSTEMS": systems,
-        "VERSIONS": versions,
-        "DIRECTIONS": directions,
-        "WEIGHTS": weights,
-        "CONFIDENCE_THRESHOLDS": confidence_thresholds,
-        "DECISION_WEIGHTS": decision_weights
-    })
+    return CONFIG_CACHE

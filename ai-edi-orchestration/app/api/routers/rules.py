@@ -2,16 +2,16 @@ from fastapi import APIRouter, Depends
 from uuid import uuid4
 from app.models.routingrules import RuleCreate, RuleResponse
 from app.core.security import validate_admin_token, validate_token
-from app.persistence.db import get_db_connection
+from sqlalchemy.orm import Session
+from app.persistence.db import get_db
+from sqlalchemy import text
 
 router = APIRouter(prefix="/rules", tags=["Rules"])
 
 @router.get("/", response_model=list[RuleResponse])
-def get_rules(user=Depends(validate_admin_token)):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM routing_rules WHERE active = TRUE")
-    rows = cur.fetchall()
+def get_rules(db: Session = Depends(get_db),user=Depends(validate_admin_token)):
+    result = db.execute(text("SELECT * FROM routing_rules WHERE active = TRUE"))
+    rows = result.fetchall()
 
     results = []
     for row in rows:
@@ -31,32 +31,31 @@ def get_rules(user=Depends(validate_admin_token)):
 
 @router.post("/", response_model=RuleResponse)
 def create_rule(rule: RuleCreate,
+                db: Session = Depends(get_db),
                 user=Depends(validate_admin_token)):
-
-    conn = get_db_connection()
-    cur = conn.cursor()
 
     rule_id = str(uuid4())
 
-    cur.execute("""
-        INSERT INTO routing_rules
-        (id, source_system, receiver_system, message_type, partner_id, version, direction, target_endpoint, mapping_id, active)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, %s)
-    """, (
-        rule_id,
-        rule.source_system,
-        rule.receiver_system,
-        rule.message_type.upper(),
-        rule.partner_id,
-        rule.version,
-        rule.direction,
-        rule.target_endpoint,
-        rule.mapping_id,
-        rule.active
-    ))
-
-    conn.commit()
-
+    db.execute(
+        text("""
+            INSERT INTO routing_rules
+            (id, source_system, receiver_system, message_type, partner_id, version, direction, target_endpoint, mapping_id, active)
+            VALUES (:id,:source_system,:receiver_system,:message_type,:partner_id,:version,:direction,:target_endpoint,:mapping_id,:active)
+        """),
+        {
+            "id": rule_id,
+            "source_system": rule.source_system,
+            "receiver_system": rule.receiver_system,
+            "message_type": rule.message_type.upper(),
+            "partner_id": rule.partner_id,
+            "version": rule.version,
+            "direction": rule.direction,
+            "target_endpoint": rule.target_endpoint,
+            "mapping_id": rule.mapping_id,
+            "active": rule.active
+        }
+    )
+    db.commit()
     return {
         "id": rule_id,
         **rule.dict(),
@@ -65,17 +64,17 @@ def create_rule(rule: RuleCreate,
 
 @router.delete("/{rule_id}")
 def deactivate_rule(rule_id: str,
+                    db: Session = Depends(get_db),
                     user=Depends(validate_admin_token)):
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+    db.execute(
+        text("""
+            UPDATE routing_rules
+            SET active = FALSE
+            WHERE id = :rule_id
+        """),
+        {"rule_id": rule_id}
+    )
 
-    cur.execute("""
-        UPDATE routing_rules
-        SET active = FALSE
-        WHERE id = %s
-    """, (rule_id,))
-
-    conn.commit()
-
+    db.commit()
     return {"status": "deactivated"}

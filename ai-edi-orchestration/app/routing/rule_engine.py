@@ -8,18 +8,20 @@ from fastapi import Request
 import logging
 from app.persistence.repositories.repository import register_historical_route
 from app.models.routingrules import RuleCreate
-from app.persistence.db import get_db_connection
 from app.services.config_cache import CONFIG_CACHE
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 class RuleEngine:
 
-    def __init__(self):
+    def __init__(self, db):
+        self.db = db
         self.load_rules()
 
 
     def load_rules(self):
         
-        self.rules = load_rules_from_db()
+        self.rules = load_rules_from_db(self.db)
 
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
@@ -71,7 +73,7 @@ class RuleEngine:
 
         if rule:
             # After rule-based routing success
-            register_historical_route(canonical_message, rule.target_endpoint, rule.mapping_id,"1.0","ROUTED_RULE",request_id)
+            register_historical_route(self.db,canonical_message, rule.target_endpoint, rule.mapping_id,"1.0","ROUTED_RULE",request_id)
             logger_request(canonical_message, "ROUTED_RULE", "1.0", request_id, rule.target_endpoint, rule.mapping_id)
             return {
                 "status": "ROUTED_RULE",
@@ -80,7 +82,7 @@ class RuleEngine:
             }
 
         # 2️⃣ Embedding fallback
-        ai_result = embedding_route_suggestion(canonical_message)
+        ai_result = embedding_route_suggestion(canonical_message, self.db)
 
         CONFIDENCE_THRESHOLDS = CONFIG_CACHE.get("CONFIDENCE_THRESHOLDS", [])
 
@@ -90,7 +92,7 @@ class RuleEngine:
         )
 
         if ai_result and ai_result["confidence"] >= threshold:
-            register_historical_route(canonical_message, ai_result["endpoint"], ai_result["tpm"],ai_result["confidence"],ai_result["status"],request_id)
+            register_historical_route(self.db, canonical_message, ai_result["endpoint"], ai_result["tpm"],ai_result["confidence"],ai_result["status"],request_id)
             logger_request(canonical_message,"ROUTED_AI", round(ai_result["confidence"],2), request_id, ai_result["endpoint"], ai_result["tpm"])
             return {
                 "status": "ROUTED_AI",
@@ -102,7 +104,7 @@ class RuleEngine:
         # 3️⃣ Park
         status = "PARKED_MANUAL_REVIEW"
         reason = ai_result["reason"] if ai_result else "NO_HISTORICAL_MATCH"
-        register_historical_route(canonical_message,"","",0.0,ai_result["status"],request_id)
+        register_historical_route(self.db, canonical_message,"","",0.0,ai_result["status"],request_id)
         logger_request(canonical_message,status,round(ai_result["confidence"],2),request_id,"","")
         return {
             "status": status,
@@ -124,12 +126,10 @@ def logger_request(canonical_message, decision_type, confidence, request_id, end
         }
     )
 
-def load_rules_from_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
+def load_rules_from_db(db):
 
-    cur.execute("""SELECT * FROM routing_rules where active = TRUE""")
-    rows = cur.fetchall()
+    result = db.execute(text("""SELECT * FROM routing_rules where active = TRUE"""))
+    rows = result.fetchall()
 
     active_rules = []
 
@@ -148,7 +148,4 @@ def load_rules_from_db():
 
         active_rules.append(rulecreate)
     
-
-    cur.close()
-    conn.close()
     return active_rules

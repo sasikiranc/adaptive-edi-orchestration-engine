@@ -6,9 +6,12 @@ import numpy as np
 from app.core.logging_config import setup_logging
 import uuid
 from fastapi import Request, Depends
-from app.core.security import validate_token
+from app.core.security import validate_token, validate_admin_token
 from app.api.routers import rules, governance
 from app.services.config_cache import load_config
+from sqlalchemy.orm import Session
+from app.persistence.db import get_db
+from app.persistence.db import SessionLocal
 
 setup_logging()
 
@@ -18,16 +21,27 @@ app.include_router(rules.router)
 app.include_router(governance.router)
 
 @app.post("/route")
-def route_message(request: Request, payload: dict, format_hint: str, user=Depends(validate_token)):
+def route_message(
+    request: Request,
+    payload: dict,
+    format_hint: str,
+    db: Session = Depends(get_db),
+    user=Depends(validate_token)
+):
     try:
-        canonical = build_canonical_message(payload,format_hint)
-        engine = RuleEngine()
+        canonical = build_canonical_message(db, payload, format_hint)
+
         request_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
         request_id = request.state.request_id
-        result = engine.route_with_ai(canonical,request_id)
+
+        engine = RuleEngine(db)
+
+        result = engine.route_with_ai(canonical, request_id)
+
         return result
+
     except ValueError as e:
-        return f"Error in payload: {e}"
+        return {"error": f"Error in payload: {e}"}
 
 @app.on_event("startup")
 def startup():
@@ -51,6 +65,22 @@ def metrics():
         "manual_routes": manual_count
     }
 
+@app.post("/admin/reload-config")
+def reload_config(
+    db: Session = Depends(get_db),
+    user=Depends(validate_admin_token)
+):
+
+    load_config(db)
+
+    return {"status": "config reloaded"}
+
 @app.on_event("startup")
-def startup_event():
-    load_config()
+def startup():
+
+    db = SessionLocal()
+
+    try:
+        load_config(db)
+    finally:
+        db.close()

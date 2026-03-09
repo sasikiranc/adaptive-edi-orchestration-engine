@@ -1,9 +1,9 @@
 import numpy as np
 import json
-from app.persistence.db import get_db_connection
 from app.models.canonical import RoutingRule, CanonicalMessage, HistoricalRoute
 from app.core.config import MIN_HISTORY_THRESHOLD
 from app.services.config_cache import CONFIG_CACHE
+from sqlalchemy import text
 
 def build_feature_vector(message):
 
@@ -48,9 +48,9 @@ def cosine_similarity(v1, v2):
         np.linalg.norm(v1) * np.linalg.norm(v2)
     )
 
-def embedding_route_suggestion(message):
+def embedding_route_suggestion(message, db):
 
-    historical_routes = fetch_historical_routes()
+    historical_routes = fetch_historical_routes(db)
 
     filtered_routes = [
         row for row in historical_routes
@@ -98,12 +98,10 @@ def embedding_route_suggestion(message):
         "reason": "AI_ROUTED_HIGH_CONFIDENCE"
     }
 
-def fetch_historical_routes():
-    conn = get_db_connection()
-    cur = conn.cursor()
+def fetch_historical_routes(db):
 
-    cur.execute("""SELECT * FROM historical_routes""")
-    rows = cur.fetchall()
+    result = db.execute(text("""SELECT * FROM historical_routes"""))
+    rows = result.fetchall()
 
     historical_routes = []
 
@@ -129,9 +127,6 @@ def fetch_historical_routes():
 
         historical_routes.append(route)
     
-
-    cur.close()
-    conn.close()
     return historical_routes
 
 

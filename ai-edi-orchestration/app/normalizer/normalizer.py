@@ -1,41 +1,62 @@
 from app.models.canonical import CanonicalMessage
 from app.services.config_cache import CONFIG_CACHE
-from app.persistence.db import get_db_connection
+from sqlalchemy import text
 
-def infer_direction(source_system: str, receiver_system: str, format: str, version: str | None) -> str:
+def get_s4_systems(db):
+
+    if "s4_systems" not in CONFIG_CACHE:
+
+        result = db.execute(
+            text("""
+                SELECT code
+                FROM systems
+                WHERE active = TRUE
+                AND system_type = 'S4'
+            """)
+        )
+
+        CONFIG_CACHE["s4_systems"] = [
+            row[0].upper() for row in result.fetchall()
+        ]
+
+    return CONFIG_CACHE["s4_systems"]
+
+def infer_direction(
+    db,
+    source_system: str,
+    receiver_system: str,
+    msg_format: str,
+    version: str | None
+) -> str:
+
     source_system = source_system.upper()
     receiver_system = receiver_system.upper()
-    format = format.upper()
+    msg_format = msg_format.upper()
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+    systems = get_s4_systems(db)
 
-    # systems
-    cur.execute("SELECT code FROM systems WHERE active = TRUE and system_type = 'S4'")
-    systems = [row[0] for row in cur.fetchall()]
+    if msg_format == "IDOC":
 
-    cur.close()
-    conn.close()
-
-
-    if format == "IDOC":
         if source_system in systems:
             return "OUTBOUND"
+
         if receiver_system in systems:
             return "INBOUND"
 
-    if format == "X12":
+    elif msg_format == "X12":
+
         if not version:
             raise ValueError("X12 message must include version")
 
-        if source_system not in systems and receiver_system in systems:
+        if receiver_system in systems:
             return "INBOUND"
-        if source_system in systems and receiver_system not in systems:
+
+        if source_system in systems:
             return "OUTBOUND"
 
     raise ValueError(
-        f"Unable to infer direction for source={source_system}, "
-        f"receiver={receiver_system}, format={format}"
+        f"Unable to infer direction for "
+        f"source={source_system}, receiver={receiver_system}, format={msg_format}"
     )
 
 def normalize_idoc_payload(data: dict) -> dict:
@@ -65,6 +86,7 @@ def normalize_idoc_payload(data: dict) -> dict:
     }
 
 def normalize_x12_payload(data: dict) -> dict:
+
     isa = data.get("ISA")
     gs = data.get("GS")
     st = data.get("ST")
@@ -76,8 +98,8 @@ def normalize_x12_payload(data: dict) -> dict:
     version = gs.get("version")
     control_number = isa.get("control_number")
 
-    sender = data.get("source_system")
-    receiver = data.get("receiver_system")
+    sender = data.get("source_system") or isa.get("sender")
+    receiver = data.get("receiver_system") or isa.get("receiver")
 
     if not all([transaction_set, version, control_number, sender, receiver]):
         raise ValueError("Missing required X12 fields")
@@ -93,15 +115,21 @@ def normalize_x12_payload(data: dict) -> dict:
         "version": version
     }
 
-def build_canonical_message(raw_data: dict, format_hint: str) -> CanonicalMessage:
+def build_canonical_message(db, raw_data: dict, format_hint: str) -> CanonicalMessage:
+
+    if not format_hint:
+        raise ValueError("format_hint is required")
+
     format_hint = format_hint.upper()
 
     if format_hint == "IDOC":
         normalized = normalize_idoc_payload(raw_data)
+
     elif format_hint == "X12":
         normalized = normalize_x12_payload(raw_data)
+
     else:
-        raise ValueError("Unsupported format")
+        raise ValueError(f"Unsupported format: {format_hint}")
 
     # Uppercase normalization
     normalized = {
@@ -110,6 +138,7 @@ def build_canonical_message(raw_data: dict, format_hint: str) -> CanonicalMessag
     }
 
     direction = infer_direction(
+        db,
         normalized["source_system"],
         normalized["receiver_system"],
         normalized["format"],
