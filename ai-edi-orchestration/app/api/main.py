@@ -21,15 +21,16 @@ app.include_router(rules.router)
 app.include_router(governance.router)
 
 @app.post("/route")
-def route_message(
+async def route_message(
     request: Request,
-    payload: dict,
-    format_hint: str,
     db: Session = Depends(get_db),
     user=Depends(validate_token)
 ):
     try:
-        canonical = build_canonical_message(db, payload, format_hint)
+        raw_payload = await request.body()
+        raw_payload = raw_payload.decode()
+        
+        canonical = build_canonical_message(db, raw_payload)
 
         request_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
         request_id = request.state.request_id

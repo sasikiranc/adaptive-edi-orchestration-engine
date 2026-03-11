@@ -6,8 +6,9 @@ def main():
     
     conn = get_db_connection()
 
-    query_sql = "SELECT json_agg(t) FROM (select * from similarity_weights) t;"
+    #query_sql = "SELECT json_agg(t) FROM (select * from decision_weights) t;"
     #query_sql = "SELECT json_agg(t) FROM (SELECT * FROM confidence_thresholds) t;"
+    query_sql = "SELECT json_agg(t) FROM (select * from partner_identity_map) t;"
 
     cur = conn.cursor()
     cur.execute(query_sql)

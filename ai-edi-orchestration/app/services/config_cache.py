@@ -1,6 +1,7 @@
 from sqlalchemy import text
+from typing import Dict, Any
 
-CONFIG_CACHE = {}
+CONFIG_CACHE: Dict[str, Any] = {}
 
 
 def load_config(db):
@@ -44,7 +45,7 @@ def load_config(db):
         SELECT feature_name, weight
         FROM similarity_weights
     """))
-    config["WEIGHTS"] = {
+    config["SIMILARITY_WEIGHTS"] = {
         row[0].upper(): float(row[1]) for row in result.fetchall()
     }
 
@@ -65,6 +66,41 @@ def load_config(db):
     config["DECISION_WEIGHTS"] = {
         row[0].upper(): float(row[1]) for row in result.fetchall()
     }
+
+    # parnter identity map
+    result = db.execute(text("""
+        SELECT external_id, format, canonical_system
+        FROM partner_identity_map WHERE active = TRUE
+    """))
+    config["PARTNER_IDENTITY_MAP"] = {
+        (row[1].upper(), row[0].upper()): row[2].upper()
+        for row in result.fetchall()
+    }
+
+    # routing rules
+    result = db.execute(text("""
+        SELECT message_type,
+               direction,
+               source_system,
+               receiver_system,
+               version,
+               target_endpoint,
+               mapping_id
+        FROM routing_rules
+        WHERE active = TRUE
+    """))
+
+    rules = [dict(row._mapping) for row in result.fetchall()]
+
+    candidate_index = {}
+
+    for r in rules:
+        key = (r["message_type"].upper(), r["direction"].upper())
+
+        candidate_index.setdefault(key, []).append(r)
+
+    config["ROUTING_RULES"] = rules
+    config["CANDIDATE_INDEX"] = candidate_index
 
     CONFIG_CACHE.clear()
     CONFIG_CACHE.update(config)
