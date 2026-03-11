@@ -1,4 +1,4 @@
-# adaptive-edi-orchestration-engine
+# Adaptive EDI Routing Engine with Hybrid Rule + Similarity Intelligence
 Enterprise-ready EDI routing engine combining rules, ML similarity scoring, manual overrides, and secure OAuth-based APIs for intelligent integration orchestration.
 
 🚀 Overview
@@ -46,41 +46,164 @@ This microservice becomes the decision brain.
 		├── TPM Mapping
 		├── Transformation
 		└── Delivery
-  
-🧠 Core Design Principles
 
-1️⃣ Deterministic First
 
-Explicit rule table (routing_rules) always takes precedence.
+🧠 Routing Intelligence Layer
 
-2️⃣ AI-Assisted Routing
+The routing engine uses a multi-stage decision strategy to determine the best routing rule for an incoming message.
 
-When no rule matches:
+The system progressively moves from deterministic routing to similarity-based routing.
 
-Similarity-based scoring is applied
+	Rule Engine
+	      ↓
+	Feature Scoring
+	      ↓
+	Vector Similarity Fallback
+	      ↓
+	Manual Review
 
-Weighted feature comparison
+This design ensures deterministic routing whenever possible while still handling unknown or partially matching messages.
 
-Decision-weight hierarchy
+⚡ Candidate Index (Fast Rule Lookup)
 
-3️⃣ Confidence-Governed Decision
+To avoid scanning all routing rules for every message, rules are indexed in memory during application startup.
 
-If confidence < threshold → Parked for review
+Index Key
+	(message_type, direction)
 
-4️⃣ Human-in-the-Loop Learning
+Example:
 
-Manual override:
+	('850','INBOUND')
+	('ORDERS','OUTBOUND')
+	('810','INBOUND')
+	Index Structure
+	CANDIDATE_INDEX = {
+	   ('850','INBOUND'): [rule1, rule2],
+	   ('ORDERS','OUTBOUND'): [rule3]
+	}
 
-Updates historical_routes
+This reduces rule lookup from:
 
-Influences future similarity scoring
+	O(n) → O(1)
 
-Strengthens learning memory
+which allows the system to scale to thousands of routing rules.
 
-5️⃣ Config-Driven Engine
+🧩 Feature-Based Scoring Engine
 
-No hardcoded enums.
-All features, weights, and thresholds come from DB config tables.
+When multiple candidate rules exist, the router calculates a feature match score.
+
+Features Used
+| Feature         | Description         |
+| --------------- | ------------------- |
+| message_type    | Transaction type    |
+| source_system   | Originating system  |
+| receiver_system | Target system       |
+| direction       | INBOUND / OUTBOUND  |
+| version         | EDI or IDOC version |
+
+Matching Rules
+
+	Exact match → score 1
+	Mismatch → score 0
+	Null rule value → wildcard match
+
+Example wildcard rule:
+
+	receiver_system = NULL
+
+means:
+
+	match any receiver
+	
+Weighted Scoring
+
+Weights are stored in the configuration table:
+
+	similarity_weights
+
+Example configuration:
+
+| Feature         | Weight |
+| --------------- | ------ |
+| message_type    | 0.3    |
+| source_system   | 0.3    |
+| receiver_system | 0.2    |
+| direction       | 0.1   |
+| version         | 0.1    |
+
+Score Calculation
+	score =
+	(match(message_type) × weight_message_type)
+	+
+	(match(source_system) × weight_source_system)
+	+
+	(match(receiver_system) × weight_receiver_system)
+	+
+	(match(direction) × weight_direction)
+	+
+	(match(version) × weight_version)
+
+Score range:
+
+	0.0 → no match
+	1.0 → perfect match
+	
+🤖 Vector Similarity Fallback (AI Routing)
+
+If no rule achieves the minimum confidence threshold, the router falls back to vector similarity matching against historical routes.
+
+Historical routing decisions are stored in:
+
+	historical_routes
+
+Each historical message is converted into a feature vector.
+
+Example vector representation:
+
+	[message_type, source_system, receiver_system, direction, version]
+
+The incoming message vector is compared against historical vectors using cosine similarity.
+
+The most similar historical message determines the routing decision.
+
+Example
+
+	Incoming message: 850 inbound
+
+Closest historical match:
+
+	850 inbound from same partner
+
+Routing decision:
+
+	ROUTED_AI
+	
+🔁 Learning Behavior
+
+When a manual override occurs:
+
+Routing decision is stored in
+
+	historical_routes
+
+Audit entry is created in
+
+	routing_audit
+
+Future similar messages can be auto-routed using vector similarity.
+
+This enables the system to learn routing patterns over time.
+
+Decision Weights
+
+| Decision Type        | Weight |
+| -------------------- | ------ |
+| ROUTED_RULE          | 0.9    |
+| MANUAL_OVERRIDE      | 1.0    |
+| ROUTED_AI            | 0.8    |
+| PARKED_MANUAL_REVIEW | 0.3    |
+
+Final confidence = similarity_score × decision_weight
 
 📦 Technology Stack
 | Layer         | Technology                           |
@@ -186,6 +309,8 @@ Full routing traceability
 
 	confidence_thresholds
 
+	partner_identity_map
+
 Loaded into memory at startup.
 
 ⚙ Canonical Model
@@ -201,47 +326,34 @@ All incoming messages (IDOC or EDI) are normalized into:
 	control_number
 	direction (inferred)
 
-Direction inference is logic-based, not hardcoded.
-
-🤖 Similarity Engine
-
-Feature vector built dynamically from DB records.
-
-Weighted Features
-| Feature         | Weight |
-| --------------- | ------ |
-| message_type    | 2.0    |
-| source_system   | 1.5    |
-| receiver_system | 1.3    |
-| direction       | 1.2    |
-| version         | 1.0    |
-
-Decision Weights
-| Decision Type        | Weight |
-| -------------------- | ------ |
-| ROUTED_RULE          | 1.0    |
-| MANUAL_OVERRIDE      | 1.2    |
-| ROUTED_AI            | 0.8    |
-| PARKED_MANUAL_REVIEW | 0.3    |
-
-
-Final confidence = similarity_score × decision_weight
-
 🔁 Routing Flow
 
-	Normalize input
-	
-	Match routing_rules
-	
-	If match → ROUTED_RULE
-	
-	If no match → similarity engine
-	
-	If confidence ≥ threshold → ROUTED_AI
-	
-	Else → PARKED_MANUAL_REVIEW
-	
-	Manual override updates learning memory
+	Incoming Message
+	        │
+	        ▼
+	Payload Normalization
+	(IDOC / X12)
+	        │
+	        ▼
+	Canonical Message
+	        │
+	        ▼
+	Candidate Index Lookup
+	(message_type, direction)
+	        │
+	        ▼
+	Feature Scoring Engine
+	        │
+	        ├─ High score → ROUTED_RULE
+	        │
+	        └─ Low score
+	                │
+	                ▼
+	        Vector Similarity Search
+	                │
+	                ├─ Match → ROUTED_AI
+	                │
+	                └─ No match → PARKED_MANUAL_REVIEW
 
 🔐 Security
 
@@ -264,6 +376,10 @@ Final confidence = similarity_score × decision_weight
 	POST /rules
 
 		Create deterministic routing rule.
+
+	POST /admin/reload-config
+
+		Reloads configuration tables into the engine.
 
 ☁ Cloud Deployment (BTP CF)
 
@@ -324,22 +440,6 @@ Procfile:
 Deploy:
 
 	cf push
-
-🧪 Learning Behavior Example
-
-	Ambiguous ORDERS message arrives
-	
-	No rule match
-	
-	Confidence = 0.58 → Parked
-	
-	Manual override applied
-	
-	Similar message arrives
-	
-	Confidence increases
-	
-	Auto-route triggered
 
 Structured ML evolution without LLM dependency.
 
