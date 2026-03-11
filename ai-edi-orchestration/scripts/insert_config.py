@@ -40,14 +40,10 @@ def main():
  )'''
 
     '''cur.execute("""
-         INSERT INTO similarity_weights
-         (feature_name, weight)
-         VALUES (%s,%s)
-      """, 
-         (
-		    "version",0.1
-         )
-    )
+         UPDATE decision_weights
+         SET weight = 0.9
+            WHERE decision_type = 'ROUTED_RULE'
+      """)
     '''
 
     cur.execute("""
@@ -56,7 +52,7 @@ def main():
         VALUES (%s,%s,%s,%s)
     """, 
        (
-           "FOXCONNSAP","X12","FOXCONN",True
+           "S4CLNT100", "IDOC", "S4CLNT100", True
        )
     )
 

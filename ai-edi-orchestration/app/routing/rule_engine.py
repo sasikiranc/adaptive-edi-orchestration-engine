@@ -16,22 +16,6 @@ class RuleEngine:
 
     def __init__(self, db):
         self.db = db
-        self.load_rules()
-
-
-    def load_rules(self):
-        
-        self.rules = load_rules_from_db(self.db)
-
-        logging.basicConfig(level=logging.INFO)
-        logger = logging.getLogger(__name__)
-
-        logger.info(
-            "Rule Engine Loaded decision",
-            extra={
-                "No of rules loaded": len(self.rules)
-            })
-
     
     def find_routing_rule(self, message: CanonicalMessage):
         for rule in self.rules:
@@ -74,12 +58,12 @@ class RuleEngine:
 
         if decision == "ROUTED_RULE":
             # After rule-based routing success
-            register_historical_route(self.db,canonical_message, rule.target_endpoint, rule.mapping_id,"1.0",decision,request_id)
-            logger_request(canonical_message, "ROUTED_RULE", "1.0", request_id, rule.target_endpoint, rule.mapping_id)
+            register_historical_route(self.db,canonical_message, rule["target_endpoint"], rule["mapping_id"],"1.0",decision,request_id)
+            logger_request(canonical_message, "ROUTED_RULE", "1.0", request_id, rule["target_endpoint"], rule["mapping_id"])
             return {
                 "status": decision,
-                "endpoint": rule.target_endpoint,
-                "tpm_mapping": rule.mapping_id
+                "endpoint": rule["target_endpoint"],
+                "tpm_mapping": rule["mapping_id"]
             }
 
         # 2️⃣ Embedding fallback
@@ -127,27 +111,3 @@ def logger_request(canonical_message, decision_type, confidence, request_id, end
             "confidence": confidence
         }
     )
-
-def load_rules_from_db(db):
-
-    result = db.execute(text("""SELECT * FROM routing_rules where active = TRUE"""))
-    rows = result.fetchall()
-
-    active_rules = []
-
-    for row in rows:
-        rulecreate = RuleCreate(
-            source_system=row[1],
-            receiver_system=row[2],
-            message_type=row[3],
-            partner_id=row[4],
-            version=row[5],
-            direction=row[6],
-            target_endpoint=row[7],
-            mapping_id=row[8],
-            active=row[9]
-        )
-
-        active_rules.append(rulecreate)
-    
-    return active_rules

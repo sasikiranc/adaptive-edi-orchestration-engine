@@ -174,7 +174,7 @@ def score_rule(rule, canonical):
     score += match(rule["source_system"], canonical.source_system) * weights["source_system"]
     score += match(rule["receiver_system"], canonical.receiver_system) * weights["receiver_system"]
     score += match(rule["version"], canonical.version) * weights["version"]
-    score += match(rule.get("message_type"), canonical.message_type) * weights["message_type"]
+    score += match(rule["message_type"], canonical.message_type) * weights["message_type"]
 
     return score
 
@@ -198,7 +198,9 @@ def evaluate_decision(score):
 
     weights = CONFIG_CACHE["DECISION_WEIGHTS"]
 
-    if score == weights["ROUTED_RULE"]:
+    score = round(score, 3)
+
+    if score >= weights["ROUTED_RULE"]:
         return "ROUTED_RULE"
     else:
         return "ROUTE_FALLBACK"
