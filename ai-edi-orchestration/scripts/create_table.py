@@ -12,13 +12,16 @@ def main():
 
     #query_sql = 'CREATE TABLE routing_rules (id UUID PRIMARY KEY, source_system VARCHAR(50), receiver_system VARCHAR(50), message_type VARCHAR(50) NOT NULL, partner_id VARCHAR(100), version VARCHAR(20), direction VARCHAR(20), target_endpoint VARCHAR(255) NOT NULL, mapping_id VARCHAR(255) NOT NULL, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)'
 
-    query_list = ['CREATE TABLE message_types (code VARCHAR PRIMARY KEY, active BOOLEAN DEFAULT TRUE);',
+    """query_list = ['CREATE TABLE message_types (code VARCHAR PRIMARY KEY, active BOOLEAN DEFAULT TRUE);',
                   'CREATE TABLE systems (code VARCHAR PRIMARY KEY, system_type VARCHAR, active BOOLEAN DEFAULT TRUE);',
                   'CREATE TABLE directions (code VARCHAR PRIMARY KEY, active BOOLEAN DEFAULT TRUE);',
                   'CREATE TABLE versions (code VARCHAR PRIMARY KEY, active BOOLEAN DEFAULT TRUE);',
                   'CREATE TABLE similarity_weights (feature_name VARCHAR PRIMARY KEY, weight FLOAT);',
                   'CREATE TABLE confidence_thresholds (code VARCHAR PRIMARY KEY, confidence_threshold FLOAT);',
                   'CREATE TABLE decision_weights (decision_type VARCHAR PRIMARY KEY, weight FLOAT);']
+    """
+
+    query_sql = 'CREATE TABLE partner_identity_map (external_id VARCHAR(40) PRIMARY KEY, format VARCHAR(20), canonical_system VARCHAR(40), active BOOLEAN DEFAULT TRUE)'
 
     cur = conn.cursor()
     #cur.execute(query_sql)
@@ -26,7 +29,7 @@ def main():
     '''for i in query_list:
         cur.execute(i)'''
 
-    cur.execute(query_list[5])
+    cur.execute(query_sql)
     
     conn.commit()
     cur.close()

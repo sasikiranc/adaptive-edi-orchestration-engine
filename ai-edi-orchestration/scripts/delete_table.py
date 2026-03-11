@@ -6,7 +6,7 @@ def main():
     
     conn = get_db_connection()
 
-    query_sql = 'truncate table routing_rules'
+    query_sql = 'truncate table similarity_weights'
 
     cur = conn.cursor()
     cur.execute(query_sql)

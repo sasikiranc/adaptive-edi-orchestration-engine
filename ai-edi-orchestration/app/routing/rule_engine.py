@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional
 from app.models.canonical import CanonicalMessage
-from app.routing.similarity_engine import embedding_route_suggestion, fetch_historical_routes
+from app.routing.similarity_engine import embedding_route_suggestion, fetch_historical_routes,find_best_route, evaluate_decision
 import csv
 from app.core.config import DEFAULT_THRESHOLD
 from fastapi import Request
@@ -68,49 +68,51 @@ class RuleEngine:
     def route_with_ai(self, canonical_message: CanonicalMessage, request_id):
 
         # 1️⃣ Deterministic rule
-        rule = self.find_routing_rule(canonical_message)
-        request_id = request_id
+        rule, score = find_best_route(canonical_message)
 
-        if rule:
+        decision = evaluate_decision(score)
+
+        if decision == "ROUTED_RULE":
             # After rule-based routing success
-            register_historical_route(self.db,canonical_message, rule.target_endpoint, rule.mapping_id,"1.0","ROUTED_RULE",request_id)
+            register_historical_route(self.db,canonical_message, rule.target_endpoint, rule.mapping_id,"1.0",decision,request_id)
             logger_request(canonical_message, "ROUTED_RULE", "1.0", request_id, rule.target_endpoint, rule.mapping_id)
             return {
-                "status": "ROUTED_RULE",
+                "status": decision,
                 "endpoint": rule.target_endpoint,
                 "tpm_mapping": rule.mapping_id
             }
 
         # 2️⃣ Embedding fallback
-        ai_result = embedding_route_suggestion(canonical_message, self.db)
+        if decision == "ROUTE_FALLBACK":
+            ai_result = embedding_route_suggestion(canonical_message, self.db)
 
-        CONFIDENCE_THRESHOLDS = CONFIG_CACHE.get("CONFIDENCE_THRESHOLDS", [])
+            CONFIDENCE_THRESHOLDS = CONFIG_CACHE.get("CONFIDENCE_THRESHOLDS", [])
 
-        threshold = CONFIDENCE_THRESHOLDS.get(
-            canonical_message.message_type,
-            DEFAULT_THRESHOLD
-        )
+            threshold = CONFIDENCE_THRESHOLDS.get(
+                canonical_message.message_type,
+                DEFAULT_THRESHOLD
+            )
 
-        if ai_result and ai_result["confidence"] >= threshold:
-            register_historical_route(self.db, canonical_message, ai_result["endpoint"], ai_result["tpm"],ai_result["confidence"],ai_result["status"],request_id)
-            logger_request(canonical_message,"ROUTED_AI", round(ai_result["confidence"],2), request_id, ai_result["endpoint"], ai_result["tpm"])
+            if ai_result and ai_result["confidence"] >= threshold:
+                register_historical_route(self.db, canonical_message, ai_result["endpoint"], ai_result["tpm"],ai_result["confidence"],ai_result["status"],request_id)
+                logger_request(canonical_message,"ROUTED_AI", round(ai_result["confidence"],2), request_id, ai_result["endpoint"], ai_result["tpm"])
+                return {
+                    "status": ai_result["status"],
+                    "endpoint": ai_result["endpoint"],
+                    "tpm_mapping": ai_result["tpm"],
+                    "confidence": str(round(ai_result["confidence"],2))
+                }
+
+            # 3️⃣ Park
+            status = "PARKED_MANUAL_REVIEW"
+            reason = "NO_HISTORICAL_MATCH"
+            register_historical_route(self.db, canonical_message,"","",round(ai_result["confidence"],2),status,request_id)
+            logger_request(canonical_message,status,round(ai_result["confidence"],2),request_id,"","")
             return {
-                "status": "ROUTED_AI",
-                "endpoint": ai_result["endpoint"],
-                "tpm_mapping": ai_result["tpm"],
-                "confidence": str(round(ai_result["confidence"],2))
+                "status": status,
+                "confidence": round(ai_result["confidence"],2),
+                "reason": reason
             }
-
-        # 3️⃣ Park
-        status = "PARKED_MANUAL_REVIEW"
-        reason = ai_result["reason"] if ai_result else "NO_HISTORICAL_MATCH"
-        register_historical_route(self.db, canonical_message,"","",0.0,ai_result["status"],request_id)
-        logger_request(canonical_message,status,round(ai_result["confidence"],2),request_id,"","")
-        return {
-            "status": status,
-            "confidence": round(ai_result["confidence"],2) if ai_result else 0.0,
-            "reason": reason
-        }
 
 def logger_request(canonical_message, decision_type, confidence, request_id, endpoint, tpm):
     logging.basicConfig(level=logging.INFO)

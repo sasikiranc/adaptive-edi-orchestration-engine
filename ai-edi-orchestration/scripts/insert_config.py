@@ -20,7 +20,7 @@ def main():
                   'CREATE TABLE similarity_weights (feature_name VARCHAR PRIMARY KEY, weight FLOAT);',
                   'CREATE TABLE confidence_thresholds (code VARCHAR PRIMARY KEY, confidence_threshold FLOAT);',
                   'CREATE TABLE decision_weights (decision_type VARCHAR PRIMARY KEY, weight FLOAT);']
-'''
+    '''
 
     cur = conn.cursor()
     #cur.execute(query_sql)
@@ -39,15 +39,36 @@ def main():
          )
  )'''
 
-    cur.execute("""
+    '''cur.execute("""
          INSERT INTO similarity_weights
          (feature_name, weight)
          VALUES (%s,%s)
       """, 
          (
-		    "receiver_system",1.3
+		    "version",0.1
          )
     )
+    '''
+
+    cur.execute("""
+        INSERT INTO partner_identity_map 
+        (external_id, format, canonical_system, active) 
+        VALUES (%s,%s,%s,%s)
+    """, 
+       (
+           "FOXCONNSAP","X12","FOXCONN",True
+       )
+    )
+
+    '''cur.execute("""
+        INSERT INTO systems 
+        (code, system_type, active) 
+        VALUES (%s,%s,%s)
+    """, 
+       (
+           "003897733","S4",True
+       )
+    )'''
     
     conn.commit()
     cur.close()

@@ -13,32 +13,32 @@ def build_feature_vector(message):
     SYSTEMS = CONFIG_CACHE.get("SYSTEMS", [])
     VERSIONS = CONFIG_CACHE.get("VERSIONS", [])
     DIRECTIONS = CONFIG_CACHE.get("DIRECTIONS", [])
-    WEIGHTS = CONFIG_CACHE.get("WEIGHTS", [])
+    WEIGHTS = CONFIG_CACHE.get("SIMILARITY_WEIGHTS", [])
 
     # Message Type
     for mt in MESSAGE_TYPES:
         value = 1 if message.message_type == mt else 0
-        vector.append(value * WEIGHTS["message_type"])
+        vector.append(value * WEIGHTS.get("message_type", 1.0))
 
     # Source System
     for sys in SYSTEMS:
         value = 1 if message.source_system == sys else 0
-        vector.append(value * WEIGHTS["source_system"])
+        vector.append(value * WEIGHTS.get("source_system", 1.0))
 
     # Receiver System
     for sys in SYSTEMS:
         value = 1 if message.receiver_system == sys else 0
-        vector.append(value * WEIGHTS["receiver_system"])
+        vector.append(value * WEIGHTS.get("receiver_system", 1.0))
 
     # Version
     for v in VERSIONS:
         value = 1 if message.version == v else 0
-        vector.append(value * WEIGHTS["version"])
+        vector.append(value * WEIGHTS.get("version", 1.0))
 
     # Direction
     for d in DIRECTIONS:
         value = 1 if message.direction == d else 0
-        vector.append(value * WEIGHTS["direction"])
+        vector.append(value * WEIGHTS.get("direction", 1.0))
 
     return np.array(vector, dtype=float)
 
@@ -48,9 +48,15 @@ def cosine_similarity(v1, v2):
         np.linalg.norm(v1) * np.linalg.norm(v2)
     )
 
+def get_candidate_rules(canonical):
+
+    key = (canonical.message_type, canonical.direction)
+
+    return CONFIG_CACHE["CANDIDATE_INDEX"].get(key, [])
+
 def embedding_route_suggestion(message, db):
 
-    historical_routes = fetch_historical_routes(db)
+    historical_routes = fetch_historical_routes(db,message.message_type,message.direction)
 
     filtered_routes = [
         row for row in historical_routes
@@ -98,9 +104,26 @@ def embedding_route_suggestion(message, db):
         "reason": "AI_ROUTED_HIGH_CONFIDENCE"
     }
 
-def fetch_historical_routes(db):
+def fetch_historical_routes(db, message_type, direction):
 
-    result = db.execute(text("""SELECT * FROM historical_routes"""))
+    # Guard against missing parameters to avoid SQLAlchemy bind errors
+    if not message_type or not direction:
+        return []
+
+    # Normalize to match how values are stored in the DB/config (upper-case)
+    message_type = message_type.upper()
+    direction = direction.upper()
+
+    sql = text(
+        """
+        SELECT * FROM historical_routes
+        WHERE message_type = :message_type AND direction = :direction
+        ORDER BY confidence DESC
+        LIMIT 200
+        """
+    )
+
+    result = db.execute(sql, {"message_type": message_type, "direction": direction})
     rows = result.fetchall()
 
     historical_routes = []
@@ -136,3 +159,46 @@ def is_bucket_mature(history_records):
         if r.decision_type in ["ROUTED_RULE", "MANUAL_OVERRIDE"]
     ]
     return len(strong_decisions) >= MIN_HISTORY_THRESHOLD
+
+def match(a, b):
+    if not a or not b:
+        return 0
+    return 1 if a == b else 0
+
+def score_rule(rule, canonical):
+
+    weights = CONFIG_CACHE["SIMILARITY_WEIGHTS"]
+
+    score = 0
+
+    score += match(rule["source_system"], canonical.source_system) * weights["source_system"]
+    score += match(rule["receiver_system"], canonical.receiver_system) * weights["receiver_system"]
+    score += match(rule["version"], canonical.version) * weights["version"]
+    score += match(rule.get("message_type"), canonical.message_type) * weights["message_type"]
+
+    return score
+
+def find_best_route(canonical):
+
+    candidates = get_candidate_rules(canonical)
+
+    best_rule = None
+    best_score = 0
+
+    for rule in candidates:
+        score = score_rule(rule, canonical)
+
+        if score > best_score:
+            best_score = score
+            best_rule = rule
+
+    return best_rule, best_score
+
+def evaluate_decision(score):
+
+    weights = CONFIG_CACHE["DECISION_WEIGHTS"]
+
+    if score == weights["ROUTED_RULE"]:
+        return "ROUTED_RULE"
+    else:
+        return "ROUTE_FALLBACK"
