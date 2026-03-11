@@ -1,8 +1,0 @@
-applications:
-  - name: ai-routing-agent
-    memory: 512M
-    instances: 1
-    buildpacks:
-      - python_buildpack
-    services:
-      - ai-routing-xsuaa
