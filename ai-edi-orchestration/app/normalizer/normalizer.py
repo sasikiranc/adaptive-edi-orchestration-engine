@@ -61,13 +61,8 @@ def infer_direction(
     )
 
 def normalize_idoc_payload(payload: str) -> dict:
-    
-    try:
-        data = json.loads(payload)
-    except Exception:
-        raise ValueError("Invalid IDOC JSON payload")
 
-    control = data.get("EDI_DC40")
+    control = payload.get("EDI_DC40")
 
     if not control:
         raise ValueError("Missing EDI_DC40 control record")
@@ -165,16 +160,18 @@ def build_canonical_message(db, raw_data: str, format_hint: str | None = None) -
     format_hint = format_hint.upper()
 
     if format_hint == "IDOC":
-        if not isinstance(raw_data, dict):
+        payload = json.loads(raw_data)
+        if not isinstance(payload, dict):
             raise ValueError("IDOC payload must be JSON")
 
-        normalized = normalize_idoc_payload(raw_data)
+        normalized = normalize_idoc_payload(payload)
 
     elif format_hint == "X12":
-        if not isinstance(raw_data, str):
+        payload = raw_data
+        if not isinstance(payload, str):
             raise ValueError("X12 payload must be raw string")
 
-        normalized = normalize_x12_payload(raw_data)
+        normalized = normalize_x12_payload(payload)
 
     else:
         raise ValueError(f"Unsupported format: {format_hint}")

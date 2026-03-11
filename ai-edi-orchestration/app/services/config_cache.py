@@ -45,8 +45,10 @@ def load_config(db):
         SELECT feature_name, weight
         FROM similarity_weights
     """))
+    # store similarity weight keys in lower-case so they match how the
+    # application code references them (e.g. 'message_type', 'source_system')
     config["SIMILARITY_WEIGHTS"] = {
-        row[0].upper(): float(row[1]) for row in result.fetchall()
+        row[0].lower(): float(row[1]) for row in result.fetchall()
     }
 
     # confidence thresholds
